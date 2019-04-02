@@ -1,7 +1,10 @@
 use clap::{App, Arg, SubCommand};
+use std::collections::HashMap;
 
 #[derive(Default)]
-pub struct KvStore;
+pub struct KvStore{
+    store:HashMap<String, String>,
+}
 
 fn unimpl() {
     eprintln!("unimplemented");
@@ -10,15 +13,15 @@ fn unimpl() {
 
 impl KvStore {
     pub fn new() -> Self {
-        unimplemented!();
+        KvStore{store:HashMap::new()}
     }
 
     pub fn set(&mut self, key: String, value: String) {
-        unimplemented!();
+        self.store.insert(key, value);
     }
 
     pub fn get(&self, key: String) -> Option<String> {
-        unimplemented!();
+        self.store.get(&key).cloned()
     }
 }
 
