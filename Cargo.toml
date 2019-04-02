@@ -1,0 +1,9 @@
+[package]
+name = "kvs"
+version = "0.1.0"
+authors = ["Qi <295872776@qq.com>"]
+description = "A key-value store"
+edition = "2018"
+
+[dependencies]
+clap = "2.32.0"
