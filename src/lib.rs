@@ -2,8 +2,8 @@ use clap::{App, Arg, SubCommand};
 use std::collections::HashMap;
 
 #[derive(Default)]
-pub struct KvStore{
-    store:HashMap<String, String>,
+pub struct KvStore {
+    store: HashMap<String, String>,
 }
 
 fn unimpl() {
@@ -13,7 +13,9 @@ fn unimpl() {
 
 impl KvStore {
     pub fn new() -> Self {
-        KvStore{store:HashMap::new()}
+        KvStore {
+            store: HashMap::new(),
+    }
     }
 
     pub fn set(&mut self, key: String, value: String) {
