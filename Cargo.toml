@@ -6,4 +6,4 @@ description = "A key-value store"
 edition = "2018"
 
 [dependencies]
-clap = "2.32.0"
+structopt = "0.2.15"

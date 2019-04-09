@@ -1,47 +1,46 @@
-use clap::{App, AppSettings, Arg, SubCommand};
+use structopt::StructOpt;
 
 fn unimpl() {
     eprintln!("unimplemented");
     std::process::exit(1);
 }
 
-fn main() {
-    let matches = App::new(env!("CARGO_PKG_NAME"))
-        .version(env!("CARGO_PKG_VERSION"))
-        .author(env!("CARGO_PKG_AUTHORS"))
-        .about(env!("CARGO_PKG_DESCRIPTION"))
-        .setting(AppSettings::DisableHelpSubcommand)
-        .setting(AppSettings::SubcommandRequiredElseHelp)
-        .subcommand(
-            SubCommand::with_name("set")
-                .args(&[
-                    Arg::with_name("key")
-                        .help("A string key")
-                        .takes_value(true)
-                        .required(true),
-                    Arg::with_name("value")
-                        .help("The string value of the key")
-                        .takes_value(true)
-                        .required(true),
-                ])
-                .about("Set the value of a string key to a string"),
-        )
-        .subcommand(
-            SubCommand::with_name("get")
-                .arg(
-                    Arg::with_name("key")
-                        .help("A string key")
-                        .takes_value(true)
-                        .required(true),
-                )
-                .about("Get the string value of a given string key"),
-        )
-        .get_matches();
+#[derive(StructOpt)]
+enum Command {
+    #[structopt(name = "set")]
+    /// Set the value of a string key to a string
+    Set {
+        #[structopt(required = true)]
+        /// A string key
+        key: String,
+        #[structopt(required = true)]
+        /// The string value of the key
+        value: String,
+    },
+    #[structopt(name = "get")]
+    /// Get the string value of a given string key
+    Get {
+        #[structopt(required = true)]
+        /// A string key
+        key: String,
+    },
+}
 
-    match matches.subcommand_name() {
-        Some("set") => unimpl(),
-        Some("get") => unimpl(),
-        None => std::process::exit(1),
+#[derive(StructOpt)]
+#[structopt(raw(setting = "structopt::clap::AppSettings::DisableHelpSubcommand"))]
+#[structopt(raw(setting = "structopt::clap::AppSettings::SubcommandRequiredElseHelp"))]
+#[structopt(raw(setting = "structopt::clap::AppSettings::VersionlessSubcommands"))]
+struct Opt {
+    #[structopt(subcommand)]
+    cmd: Command,
+}
+
+fn main() {
+    let opt = Opt::from_args();
+
+    match opt.cmd {
+        Command::Set { key, value } => unimpl(),
+        Command::Get { key } => unimpl(),
         _ => unreachable!(),
     }
 }
