@@ -1,4 +1,4 @@
-use clap::{App, Arg, SubCommand};
+use clap::{App, AppSettings, Arg, SubCommand};
 
 fn unimpl() {
     eprintln!("unimplemented");
@@ -6,22 +6,35 @@ fn unimpl() {
 }
 
 fn main() {
-        let matches = App::new("kvs")
+    let matches = App::new(env!("CARGO_PKG_NAME"))
         .version(env!("CARGO_PKG_VERSION"))
-        .author("Qi <295872776@qq.com>")
-        .about("A key-value store")
+        .author(env!("CARGO_PKG_AUTHORS"))
+        .about(env!("CARGO_PKG_DESCRIPTION"))
+        .setting(AppSettings::DisableHelpSubcommand)
+        .setting(AppSettings::SubcommandRequiredElseHelp)
         .subcommand(
             SubCommand::with_name("set")
                 .args(&[
-                    Arg::with_name("key").takes_value(true),
-                    Arg::with_name("value").takes_value(true),
+                    Arg::with_name("key")
+                        .help("A string key")
+                        .takes_value(true)
+                        .required(true),
+                    Arg::with_name("value")
+                        .help("The string value of the key")
+                        .takes_value(true)
+                        .required(true),
                 ])
-                .help("Set the value of a string key to a string"),
+                .about("Set the value of a string key to a string"),
         )
         .subcommand(
             SubCommand::with_name("get")
-                .arg(Arg::with_name("key").takes_value(true))
-                .help("Get the string value of a given string key"),
+                .arg(
+                    Arg::with_name("key")
+                        .help("A string key")
+                        .takes_value(true)
+                        .required(true),
+                )
+                .about("Get the string value of a given string key"),
         )
         .get_matches();
 
