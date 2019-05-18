@@ -1,11 +1,5 @@
-use kvs::KvStore;
-use kvs::Result;
+use kvs::{KvStore, Result};
 use structopt::StructOpt;
-
-fn unimpl() {
-    eprintln!("unimplemented");
-    std::process::exit(1);
-}
 
 #[derive(StructOpt)]
 enum Command {
@@ -26,6 +20,13 @@ enum Command {
         /// A string key
         key: String,
     },
+    #[structopt(name = "rm")]
+    /// Remove the value of a given string key
+    Remove {
+        #[structopt(required = true)]
+        /// The key to be removed
+        key: String,
+    },
 }
 
 #[derive(StructOpt)]
@@ -39,7 +40,7 @@ struct Opt {
 
 fn main() -> Result<()> {
     let opt = Opt::from_args();
-    let mut datas = KvStore::new();
+    let mut datas = KvStore::open("./kvs.db")?;
 
     match opt.cmd {
         Command::Set { key, value } => datas.set(key, value),
@@ -50,5 +51,6 @@ fn main() -> Result<()> {
             println!("{}", value.unwrap());
             Ok(())
         }
+        Command::Remove { key } => datas.remove(key),
     }
 }
