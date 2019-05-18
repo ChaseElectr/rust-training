@@ -24,6 +24,13 @@ enum Command {
         /// A string key
         key: String,
     },
+    #[structopt(name = "rm")]
+    /// Remove the value of a given string key
+    Remove {
+        #[structopt(required = true)]
+        /// The key to be removed
+        key: String,
+    },
 }
 
 #[derive(StructOpt)]
@@ -41,6 +48,6 @@ fn main() {
     match opt.cmd {
         Command::Set { key, value } => unimpl(),
         Command::Get { key } => unimpl(),
-        _ => unreachable!(),
+        Command::Remove { key } => unimpl(),
     }
 }
