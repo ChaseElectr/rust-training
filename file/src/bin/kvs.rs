@@ -40,17 +40,17 @@ struct Opt {
 
 fn main() -> Result<()> {
     let opt = Opt::from_args();
-    let mut datas = KvStore::open("./kvs.db")?;
+    let mut store = KvStore::open("./")?;
 
     match opt.cmd {
-        Command::Set { key, value } => datas.set(key, value),
+        Command::Set { key, value } => store.set(key, value),
         Command::Get { key } => {
-            let value = datas
+            let value = store
                 .get(key)?
                 .or_else(|| Some(String::from("Key not found")));
             println!("{}", value.unwrap());
             Ok(())
         }
-        Command::Remove { key } => datas.remove(key),
+        Command::Remove { key } => store.remove(key),
     }
 }
