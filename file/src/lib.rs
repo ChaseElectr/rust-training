@@ -1,4 +1,5 @@
 #![deny(missing_docs)]
+#![feature(seek_convenience)]
 //! A simple key/value store.
 
 use failure::Fail;
@@ -7,13 +8,14 @@ use serde_cbor::Deserializer;
 use std::collections::HashMap;
 use std::fs::File;
 use std::path::Path;
+use std::io::{Seek,SeekFrom};
 
 /// The type for storing key-value pairs. The key and the value are both String, and each key must be assigned with a value.
 ///
 /// You can store the key-value pair by set() method, and get a key's value by get() method. This is all we support now.
 #[derive(Debug)]
 pub struct KvStore {
-    store: HashMap<String, String>,
+    store: HashMap<String, SeekFrom>,
     log: File,
 }
 
@@ -49,9 +51,13 @@ impl From<serde_cbor::error::Error> for KvsError {
 /// A specialized Result type for I/O operations.
 pub type Result<T> = std::result::Result<T, KvsError>;
 
+/// A enum used to represent the operations. This struct is directly write
+/// into log files, and deserialized directly.
 #[derive(Debug, Serialize, Deserialize)]
 enum Operation {
-    Set { key: String, value: String },
+    Set { key: String,
+    #[derive(serde(skip_deserializing))]
+    value: String },
     Get { key: String },
     Rm { key: String },
 }
@@ -72,22 +78,26 @@ impl KvStore {
     fn log(&mut self, op: Operation) -> Result<()> {
         // Use CBOR as log format because it saves more spaces, and I can learn a
         // new data format, and it may be used in the network transfer.
-        // Except this, I think JSON is the other data format I'll choose， as it's
+        // Except this, I think JSON is the other data format I'll choose, as it's
         // human readable, extensible, and (maybe) converts faster than CBOR. More
         // importantly, it can be easily dealed with Linux command line tools.
         serde_cbor::to_writer(&mut self.log, &op).map_err(KvsError::InvalidFile)
     }
 
-    ///  reads the entire log, one command at a time, recording the affected key and
+    ///  Reads the entire log, one command at a time, recording the affected key and
     ///  file offset of the command to an in-memory key -> log pointer map
     fn rebuild(&mut self) -> Result<()> {
-        for op in Deserializer::from_reader(&self.log).into_iter::<Operation>() {
+        let mut stream = Deserializer::from_reader(&self.log).into_iter::<Operation>();
+        let mut pos = 0;
+        while let Some(op) = stream.next()  {
+            let new_pos = stream.de.byte_offset();
             match op? {
-                Operation::Set { key, value } => self.store.insert(key, value),
+                Operation::Set { key, .. } => self.store.insert(key, self.log.stream_position().map(SeekFrom::Start)?),
                 Operation::Rm { key } => self.store.remove(&key),
                 Operation::Get { .. } => None,
             };
         }
+        // dbg!(self);
         Ok(())
     }
     /// Store a key with it's value, this will store a key and it's value to the storage.
@@ -104,11 +114,11 @@ impl KvStore {
     /// assert_eq!(Some("value2".to_owned()), store.get("key".to_owned()));
     /// ```
     pub fn set(&mut self, key: String, value: String) -> Result<()> {
+        // self.store.insert(key, self.log.stream_position().map(SeekFrom::Start)?);
         self.log(Operation::Set {
             key: key.clone(),
             value: value.clone(),
         })?;
-        self.store.insert(key, value);
         Ok(())
     }
 
@@ -127,7 +137,9 @@ impl KvStore {
     /// ```
     pub fn get(&mut self, key: String) -> Result<Option<String>> {
         self.rebuild()?;
-        Ok(self.store.get(&key).cloned())
+        let index = self.store.get(&key);
+        dbg!(index);
+        Ok(None)
     }
 
     /// Remove a key's value
