@@ -7,16 +7,20 @@ use serde::{Deserialize, Serialize};
 use serde_json::Deserializer;
 use std::collections::HashMap;
 use std::fs::File;
-use std::io::{Read, Seek, SeekFrom};
-use std::path::Path;
+use std::io::{Read, Seek, SeekFrom, Write};
+use std::path::{Path, PathBuf};
+
+const COMPACTION_THRESHOLD: u64 = 1024 * 1024;
 
 /// The type for storing key-value pairs. The key and the value are both String, and each key must be assigned with a value.
 ///
 /// You can store the key-value pair by set() method, and get a key's value by get() method. This is all we support now.
 #[derive(Debug)]
 pub struct KvStore {
-    store: HashMap<String, (usize, usize)>,
+    store: HashMap<String, (u64, u64)>,
     log: File,
+    path: PathBuf,
+    uncompacted: u64,
 }
 
 /// The error type
@@ -78,7 +82,12 @@ impl KvStore {
             .append(true)
             .create(true)
             .open(path.as_ref().join("kvs.db"))?;
-        let mut store = KvStore { store: map, log };
+        let mut store = KvStore {
+            store: map,
+            log,
+            path: path.as_ref().to_path_buf(),
+            uncompacted: 0,
+        };
         store.load()?;
         Ok(store)
     }
@@ -93,26 +102,69 @@ impl KvStore {
 
         // Change to JSON format because serde_cbor doesn't have a byte_offset()
         // method for StreamDeserializer.
-        serde_json::to_writer(&mut self.log, &op).map_err(KvsError::InvalidFile)
+        serde_json::to_writer(&mut self.log, &op).map_err(KvsError::InvalidFile)?;
+        self.log.flush().map_err(KvsError::Io)
     }
 
     ///  Reads the entire log, one command at a time, recording the affected key and
     ///  file offset of the command to an in-memory key -> log pointer map
     fn load(&mut self) -> Result<()> {
-        self.log.seek(SeekFrom::Start(0))?;
-        let mut stream = Deserializer::from_reader(&self.log).into_iter::<Operation>();
-        let mut pos = 0;
+        let KvStore {
+            store,
+            log,
+            uncompacted,
+            ..
+        } = self;
+        let mut pos = log.seek(SeekFrom::Start(0))?;
+        let mut stream = Deserializer::from_reader(log).into_iter::<Operation>();
         while let Some(op) = stream.next() {
-            let new_pos = stream.byte_offset();
+            let new_pos = stream.byte_offset() as u64;
             match op? {
-                Operation::Set { key, .. } => self.store.insert(key, (pos, new_pos - pos)),
-                Operation::Rm { key } => self.store.remove(&key),
-                Operation::Get { .. } => None,
+                Operation::Set { key, .. } => {
+                    if let Some((_, len)) = store.insert(key, (pos, new_pos - pos)) {
+                        *uncompacted += len;
+                    }}
+                Operation::Rm { key } => {
+                    if let Some((_, len)) = store.remove(&key) {
+                        *uncompacted += len;
+                    }
+                    *uncompacted += new_pos - pos;
+                }
+                _ => ()
             };
             pos = new_pos;
         }
         Ok(())
     }
+
+    fn compact(&mut self) -> Result<()> {
+        let KvStore {
+            store,
+            log,
+            path,
+            uncompacted,
+        } = self;
+        let mut compact_file = std::fs::OpenOptions::new()
+            .read(true)
+            .append(true)
+            .create(true)
+            .open(path.join("kvs.comp"))?;
+        for (_key, (pos, len)) in store.iter_mut() {
+            log.seek(SeekFrom::Start(*pos))?;
+            let mut reader = log.take(*len);
+            *pos = compact_file.seek(SeekFrom::Current(0))?;
+            std::io::copy(&mut reader, &mut compact_file)?;
+        }
+        *uncompacted = 0;
+        std::fs::rename(path.join("kvs.comp"), path.join("kvs.db"))?;
+        *log = std::fs::OpenOptions::new()
+            .read(true)
+            .append(true)
+            .create(true)
+            .open(path.join("kvs.db"))?;
+        Ok(())
+    }
+
     /// Store a key with it's value, this will store a key and it's value to the storage.
     /// If the key has already been exist, the value will be overwrited.
     ///
@@ -133,8 +185,15 @@ impl KvStore {
             value: value.clone(),
         })?;
         let new_len = self.log.stream_len()?;
-        self.store
-            .insert(key, (old_len as usize, (new_len - old_len) as usize));
+        if let Some((_, len)) = self
+            .store
+            .insert(key, (old_len, (new_len - old_len)))
+        {
+            self.uncompacted += len;
+        }
+        if self.uncompacted > COMPACTION_THRESHOLD {
+            self.compact()?;
+        }
         Ok(())
     }
 
@@ -153,24 +212,30 @@ impl KvStore {
     /// ```
     pub fn get(&mut self, key: String) -> Result<Option<String>> {
         if let Some((index, len)) = self.store.get(&key) {
-            self.log.seek(SeekFrom::Start(*index as u64))?;
-            let mut value = vec![0; *len];
+            self.log.seek(SeekFrom::Start(*index))?;
+            let mut value = vec![0; *len as usize];
             self.log.read_exact(&mut value)?;
-            if let Operation::Set { key: _, value } = serde_json::from_slice(&value)? {
+            if let Operation::Set { value, .. } = serde_json::from_slice(&value)? {
                 return Ok(Some(value));
             }
         }
-        return Ok(None);
+        Ok(None)
     }
 
     /// Remove a key's value
     pub fn remove(&mut self, key: String) -> Result<()> {
         self.store.remove(&key).ok_or_else(|| {
-            println!("Key not found");
             KvsError::InvalidCommand {
                 command: "Key not found".to_owned(),
             }
         })?;
-        self.log(Operation::Rm { key })
+        let old_len = self.log.stream_len()?;
+        self.log(Operation::Rm { key })?;
+        let new_len = self.log.stream_len()?;
+        self.uncompacted += new_len - old_len;
+        if self.uncompacted > COMPACTION_THRESHOLD {
+            self.compact()?;
+        }
+        Ok(())
     }
 }
